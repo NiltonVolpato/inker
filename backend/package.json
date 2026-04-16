@@ -1,6 +1,6 @@
 {
   "name": "inker-backend",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Inker Server Backend - E-ink Device Management",
   "main": "dist/main.js",
   "scripts": {

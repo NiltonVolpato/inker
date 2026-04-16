@@ -40,7 +40,7 @@ export function PlaylistForm() {
   });
 
   const [selectedScreenId, setSelectedScreenId] = useState<string>('');
-  const [duration, setDuration] = useState<number>(60);
+  const [durationInput, setDurationInput] = useState<string>('60');
 
   const { data: playlist, isLoading: isLoadingPlaylist } = useApi<Playlist>(
     async () => {
@@ -220,9 +220,10 @@ export function PlaylistForm() {
     if (!selectedScreenId) return;
 
     const currentScreens = formData.screens || [];
+    const parsedDuration = Math.max(60, Number(durationInput) || 60);
     const newScreen: PlaylistScreen = {
       screenId: selectedScreenId,
-      duration,
+      duration: parsedDuration,
       order: currentScreens.length,
     };
 
@@ -232,7 +233,7 @@ export function PlaylistForm() {
     }));
 
     setSelectedScreenId('');
-    setDuration(60);
+    setDurationInput('60');
   };
 
   const handleRemoveScreen = (index: number) => {
@@ -264,12 +265,21 @@ export function PlaylistForm() {
     }));
   };
 
-  const handleUpdateScreenDuration = (index: number, newDuration: number) => {
-    const validDuration = Math.max(60, newDuration);
+  const handleUpdateScreenDuration = (index: number, value: string) => {
+    const num = value === '' ? 0 : Number(value);
     setFormData((prev) => ({
       ...prev,
       screens: (prev.screens || []).map((screen, i) =>
-        i === index ? { ...screen, duration: validDuration } : screen
+        i === index ? { ...screen, duration: num } : screen
+      ),
+    }));
+  };
+
+  const handleBlurScreenDuration = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      screens: (prev.screens || []).map((screen, i) =>
+        i === index ? { ...screen, duration: Math.max(60, screen.duration || 60) } : screen
       ),
     }));
   };
@@ -425,8 +435,9 @@ export function PlaylistForm() {
                     <Input
                       label="Duration (s)"
                       type="number"
-                      value={duration.toString()}
-                      onChange={(e) => setDuration(Math.max(60, Number(e.target.value)))}
+                      value={durationInput}
+                      onChange={(e) => setDurationInput(e.target.value)}
+                      onBlur={() => setDurationInput(String(Math.max(60, Number(durationInput) || 60)))}
                       min={60}
                     />
                   </div>
@@ -503,8 +514,9 @@ export function PlaylistForm() {
                         <div className="flex items-center gap-1 flex-shrink-0">
                           <input
                             type="number"
-                            value={screen.duration}
-                            onChange={(e) => handleUpdateScreenDuration(index, Number(e.target.value))}
+                            value={screen.duration || ''}
+                            onChange={(e) => handleUpdateScreenDuration(index, e.target.value)}
+                            onBlur={() => handleBlurScreenDuration(index)}
                             min={60}
                             className="w-16 px-2 py-1 text-sm text-center border border-border-light rounded focus:outline-none focus:ring-1 focus:ring-accent"
                           />

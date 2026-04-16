@@ -91,7 +91,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nginx \
     # Chrome headless shell dependencies
     wget ca-certificates openssl unzip \
-    fonts-liberation fontconfig \
+    fonts-liberation fonts-noto-color-emoji fonts-noto-cjk fontconfig \
     libnss3 libatk-bridge2.0-0t64 libdrm2 libxkbcommon0 \
     libgbm1 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
     libasound2t64 libcups2t64 libatk1.0-0t64 libnspr4 libdbus-1-3 \
@@ -104,15 +104,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip /tmp/chrome.zip -d /opt/ && \
     chmod +x /opt/chrome-headless-shell-linux64/chrome-headless-shell && \
     rm /tmp/chrome.zip && \
-    # Strip Chrome: remove GPU libs (--disable-gpu), keep only en-US locale, remove hyphen data
+    # Strip Chrome: remove GPU libs (--disable-gpu), keep locale packs for Unicode/CJK shaping
     rm -f /opt/chrome-headless-shell-linux64/libEGL.so \
           /opt/chrome-headless-shell-linux64/libGLESv2.so \
           /opt/chrome-headless-shell-linux64/libvk_swiftshader.so \
           /opt/chrome-headless-shell-linux64/libvulkan.so.1 \
           /opt/chrome-headless-shell-linux64/vk_swiftshader_icd.json \
           /opt/chrome-headless-shell-linux64/LICENSE.headless_shell && \
-    find /opt/chrome-headless-shell-linux64/locales -type f ! -name 'en-US.pak' -delete && \
-    rm -rf /opt/chrome-headless-shell-linux64/hyphen-data && \
     # Install s6-overlay
     wget -q "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" -O /tmp/s6-noarch.tar.xz && \
     tar -C / -Jxpf /tmp/s6-noarch.tar.xz && \
@@ -133,11 +131,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dpkg --purge --force-depends \
     libllvm19 libz3-4 libperl5.40 perl perl-modules-5.40 \
     libavahi-client3 libavahi-common-data libavahi-common3 \
-    libelf1t64 libc-l10n locales \
+    libelf1t64 \
     2>/dev/null || true && \
     rm -rf /var/lib/apt/lists/* /var/log/dpkg.log /var/log/apt && \
-    # Remove system locales and unused data (keep only C/POSIX and en_US)
-    rm -rf /usr/share/locale /usr/share/i18n /usr/share/doc /usr/share/man \
+    # Remove unused data (keep locales and i18n for Unicode/CJK support)
+    rm -rf /usr/share/doc /usr/share/man \
            /usr/share/info /usr/share/lintian /usr/share/X11/xkb \
            /var/cache/debconf/*-old && \
     # Remove auto-created PostgreSQL cluster (will be initialized on first run)

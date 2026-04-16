@@ -1971,7 +1971,7 @@ export class ScreenRendererService implements OnModuleDestroy, OnModuleInit {
       // List items already have prefix (•, -, 1.) from renderList(), so no list-style needed
       // Use full fontSize to match frontend WidgetRenderer.tsx
       // Allow text wrapping (no white-space: nowrap) to match designer behavior
-      const listItems = renderedContent.slice(0, 10).map(item =>
+      const listItems = renderedContent.map(item =>
         `<li style="font-size: ${fontSize}px; line-height: 1.2; margin-bottom: 4px;">${this.escapeHtml(String(item))}</li>`
       ).join('');
       innerHtml = `<ul style="list-style: none; width: 100%; text-align: ${textAlign}; margin: 0; padding: 0;">${listItems}</ul>`;
@@ -3207,7 +3207,7 @@ export class ScreenRendererService implements OnModuleDestroy, OnModuleInit {
       }
 
       if (Array.isArray(renderedContent)) {
-        const items = renderedContent.slice(0, 10).map(item =>
+        const items = renderedContent.map(item =>
           `<li style="margin-bottom: 4px;">${this.escapeHtml(String(item))}</li>`
         ).join('');
         return `<div style="${baseStyle}"><ul style="list-style: none; margin: 0; padding: 0; width: 100%; text-align: ${textAlign};">${items}</ul></div>`;

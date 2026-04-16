@@ -303,12 +303,10 @@ export class DisplayService {
       });
     }
 
-    // For multi-screen playlists, cap refresh rate at current screen's duration
-    // so the device calls back in time for rotation
+    // Use the playlist item's configured duration as the refresh rate
+    // so the device checks back at the interval the user actually set
     const screenDuration = currentScreen.duration || 60;
-    const effectiveDeviceRate = device.playlist.items.length > 1
-      ? Math.min(device.refreshRate, screenDuration)
-      : device.refreshRate;
+    const effectiveDeviceRate = screenDuration;
 
     // Calculate refresh rate based on current screen content
     // Clock widgets get minute-synced refresh; otherwise uses device's configured rate
