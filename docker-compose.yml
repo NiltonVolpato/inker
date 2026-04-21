@@ -3,7 +3,7 @@ services:
     build:
       context: .
       args:
-        DB_PROVIDER: ${DB_PROVIDER:-sqlite}
+        DB_PROVIDER: ${DB_PROVIDER:-postgresql}
         VITE_AUTH_ENABLED: ${VITE_AUTH_ENABLED:-true}
     image: ${INKER_IMAGE:-inker:latest}
     container_name: inker
@@ -20,8 +20,8 @@ services:
       ADMIN_PIN: "${ADMIN_PIN:-1111}"
       INKER_PORT: "${INKER_PORT:-80}"
       DEFAULT_TIMEZONE: ${DEFAULT_TIMEZONE:-UTC}
-      DB_PROVIDER: ${DB_PROVIDER:-sqlite}
-      DATABASE_URL: ${DATABASE_URL:-file:/app/data/inker.db}
+      DB_PROVIDER: ${DB_PROVIDER:-postgresql}
+      DATABASE_URL: ${DATABASE_URL}
       AUTH_ENABLED: ${AUTH_ENABLED:-true}
       VITE_AUTH_ENABLED: ${VITE_AUTH_ENABLED:-true}
     healthcheck:
