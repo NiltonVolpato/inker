@@ -41,10 +41,11 @@ COPY backend/scripts ./scripts/
 RUN bun install --frozen-lockfile && \
     node scripts/set-db-provider.js && \
     node ./node_modules/prisma/build/index.js generate --schema=prisma/.generated/schema.prisma && \
-    cp -r node_modules/.prisma /tmp/.prisma && \
+    cp -r node_modules/.prisma /tmp/ && \
     rm -rf node_modules && \
-    bun install --production --frozen-lockfile && \
-    cp -r /tmp/.prisma node_modules/.prisma && \
+    PRISMA_SKIP_POSTINSTALL_GENERATE=true bun install --production --frozen-lockfile && \
+    rm -rf node_modules/.prisma && \
+    cp -r /tmp/.prisma node_modules/ && \
     rm -rf /tmp/.prisma \
     node_modules/typescript \
     node_modules/@types && \
