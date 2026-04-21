@@ -9,7 +9,13 @@ export const configuration = () => ({
   inkerPort: parseInt(process.env.INKER_PORT || '80', 10),
 
   database: {
+    provider: process.env.DB_PROVIDER || 'postgresql',
     url: process.env.DATABASE_URL,
+  },
+
+  auth: {
+    // We parse this strictly defensively because Joi coercion isn't always respected downstream
+    enabled: !['false', '0', 'no', 'off', 'none'].includes((process.env.AUTH_ENABLED || '').toLowerCase()),
   },
 
   redis: {

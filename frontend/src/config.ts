@@ -65,6 +65,9 @@ export const config = {
     }
     return path;
   },
+
+  // Whether authentication is enabled
+  authEnabled: import.meta.env.VITE_AUTH_ENABLED !== 'false',
 };
 
 // Log configuration in development for debugging
@@ -74,6 +77,7 @@ if (import.meta.env.DEV) {
     apiUrl: config.apiUrl,
     backendUrl: config.backendUrl,
     backendPublicUrl: BACKEND_PUBLIC_URL || '(not set)',
+    authEnabled: config.authEnabled,
   });
 }
 

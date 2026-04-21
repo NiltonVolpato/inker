@@ -25,6 +25,80 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         this.logger.debug(`Query: ${e.query} | Duration: ${e.duration}ms`);
       });
     }
+
+    // Apply SQLite JSON fallback middleware
+    if (process.env.DB_PROVIDER === 'sqlite') {
+      const jsonFields = new Set([
+        'config', 'headers', 'lastData', 'metadata', 'defaultConfig',
+        'dataHeaders', 'settingsSchema', 'settings', 'settingsEncrypted'
+      ]);
+
+      const stringifyJsonFields = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
+        for (const key of Object.keys(obj)) {
+          if (jsonFields.has(key)) {
+            if (typeof obj[key] !== 'string' && obj[key] !== null && obj[key] !== undefined) {
+              obj[key] = JSON.stringify(obj[key]);
+            }
+          } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+            stringifyJsonFields(obj[key]);
+          }
+        }
+      };
+
+      const parseJsonFields = (model: string, obj: any) => {
+        if (!obj || typeof obj !== 'object') return;
+        for (const key of Object.keys(obj)) {
+          if (jsonFields.has(key)) {
+            if (typeof obj[key] === 'string') {
+              try {
+                obj[key] = JSON.parse(obj[key]);
+              } catch (e: any) {
+                Logger.warn(`Failed to parse JSON for ${model}.${key}: ${e.message}`, 'PrismaService');
+              }
+            }
+          } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+            parseJsonFields(model, obj[key]);
+          }
+        }
+      };
+
+      const extended = this.$extends({
+        query: {
+          $allModels: {
+            async $allOperations({ model, operation, args, query }) {
+              if (args) {
+                if ((args as any).data) stringifyJsonFields((args as any).data);
+                if ((args as any).create) stringifyJsonFields((args as any).create);
+                if ((args as any).update) stringifyJsonFields((args as any).update);
+                // Do NOT touch args.where to avoid breaking read filters
+              }
+
+              const result = await query(args);
+
+              if (result) {
+                if (Array.isArray(result)) {
+                  result.forEach(r => parseJsonFields(model || 'Unknown', r));
+                } else {
+                  parseJsonFields(model || 'Unknown', result);
+                }
+              }
+              return result;
+            }
+          }
+        }
+      });
+
+      // Bind class methods to the extended client so NestJS lifecycle hooks still work
+      Object.assign(extended, {
+        logger: this.logger,
+        onModuleInit: this.onModuleInit.bind(this),
+        onModuleDestroy: this.onModuleDestroy.bind(this),
+        cleanDatabase: this.cleanDatabase.bind(this),
+      });
+
+      return extended as unknown as this;
+    }
   }
 
   /**

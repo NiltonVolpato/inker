@@ -48,3 +48,5 @@ uploads/*
 # Test coverage
 coverage/
 .nyc_output/
+data/
+backend/prisma/.generated/
