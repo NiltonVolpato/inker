@@ -1,5 +1,15 @@
-#!/bin/sh
+#!/command/with-contenv sh
 set -e
+
+if [ -z "$DATABASE_URL" ]; then
+  if [ "$DB_PROVIDER" = "sqlite" ]; then
+    export DATABASE_URL="file:/app/data/inker.db"
+    echo "$DATABASE_URL" > /var/run/s6/container_environment/DATABASE_URL
+  else
+    export DATABASE_URL="postgresql://inker_user:inker_password@localhost:5432/inker_db"
+    echo "$DATABASE_URL" > /var/run/s6/container_environment/DATABASE_URL
+  fi
+fi
 
 echo "[init] Creating application directories..."
 mkdir -p /app/uploads/screens /app/uploads/firmware /app/uploads/widgets /app/uploads/captures /app/uploads/drawings /app/logs

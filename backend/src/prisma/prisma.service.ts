@@ -46,40 +46,58 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
         }
       };
 
-      const parseJsonFields = (obj: any) => {
+      const parseJsonFields = (model: string, obj: any) => {
         if (!obj || typeof obj !== 'object') return;
         for (const key of Object.keys(obj)) {
           if (jsonFields.has(key)) {
             if (typeof obj[key] === 'string') {
               try {
                 obj[key] = JSON.parse(obj[key]);
-              } catch (e) {}
+              } catch (e: any) {
+                Logger.warn(`Failed to parse JSON for ${model}.${key}: ${e.message}`, 'PrismaService');
+              }
             }
           } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-            parseJsonFields(obj[key]);
+            parseJsonFields(model, obj[key]);
           }
         }
       };
 
-      this.$use(async (params, next) => {
-        if (params.args) {
-          if (params.args.data) stringifyJsonFields(params.args.data);
-          if (params.args.create) stringifyJsonFields(params.args.create);
-          if (params.args.update) stringifyJsonFields(params.args.update);
-          if (params.args.where) stringifyJsonFields(params.args.where); // For complex where clauses
-        }
+      const extended = this.$extends({
+        query: {
+          $allModels: {
+            async $allOperations({ model, operation, args, query }) {
+              if (args) {
+                if ((args as any).data) stringifyJsonFields((args as any).data);
+                if ((args as any).create) stringifyJsonFields((args as any).create);
+                if ((args as any).update) stringifyJsonFields((args as any).update);
+                // Do NOT touch args.where to avoid breaking read filters
+              }
 
-        const result = await next(params);
+              const result = await query(args);
 
-        if (result) {
-          if (Array.isArray(result)) {
-            result.forEach(parseJsonFields);
-          } else {
-            parseJsonFields(result);
+              if (result) {
+                if (Array.isArray(result)) {
+                  result.forEach(r => parseJsonFields(model || 'Unknown', r));
+                } else {
+                  parseJsonFields(model || 'Unknown', result);
+                }
+              }
+              return result;
+            }
           }
         }
-        return result;
       });
+
+      // Bind class methods to the extended client so NestJS lifecycle hooks still work
+      Object.assign(extended, {
+        logger: this.logger,
+        onModuleInit: this.onModuleInit.bind(this),
+        onModuleDestroy: this.onModuleDestroy.bind(this),
+        cleanDatabase: this.cleanDatabase.bind(this),
+      });
+
+      return extended as unknown as this;
     }
   }
 

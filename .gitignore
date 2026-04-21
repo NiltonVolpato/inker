@@ -49,3 +49,4 @@ uploads/*
 coverage/
 .nyc_output/
 data/
+backend/prisma/.generated/

@@ -77,6 +77,7 @@ if (import.meta.env.DEV) {
     apiUrl: config.apiUrl,
     backendUrl: config.backendUrl,
     backendPublicUrl: BACKEND_PUBLIC_URL || '(not set)',
+    authEnabled: config.authEnabled,
   });
 }
 

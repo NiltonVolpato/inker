@@ -22,7 +22,7 @@ type AuthAction =
 
 // Initial state - simplified without user
 const initialState: AuthState = {
-  token: null,
+  token: !config.authEnabled ? 'auth-disabled' : null,
   isAuthenticated: !config.authEnabled,
   isLoading: config.authEnabled,
   error: null,

@@ -14,7 +14,8 @@ export const configuration = () => ({
   },
 
   auth: {
-    enabled: process.env.AUTH_ENABLED !== 'false',
+    // We parse this strictly defensively because Joi coercion isn't always respected downstream
+    enabled: !['false', '0', 'no', 'off', 'none'].includes((process.env.AUTH_ENABLED || '').toLowerCase()),
   },
 
   redis: {

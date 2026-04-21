@@ -40,7 +40,7 @@ COPY backend/scripts ./scripts/
 # Install all deps → generate prisma → reinstall production-only → prune
 RUN bun install --frozen-lockfile && \
     node scripts/set-db-provider.js && \
-    node ./node_modules/prisma/build/index.js generate && \
+    node ./node_modules/prisma/build/index.js generate --schema=prisma/.generated/schema.prisma && \
     cp -r node_modules/.prisma /tmp/.prisma && \
     rm -rf node_modules && \
     bun install --production --frozen-lockfile && \
@@ -81,7 +81,7 @@ RUN bun install --frozen-lockfile
 
 COPY backend/prisma ./prisma/
 COPY backend/scripts ./scripts/
-RUN node scripts/set-db-provider.js && node ./node_modules/prisma/build/index.js generate && node scripts/fix-prisma-types.js
+RUN node scripts/set-db-provider.js && node ./node_modules/prisma/build/index.js generate --schema=prisma/.generated/schema.prisma && node scripts/fix-prisma-types.js
 
 COPY backend/ .
 RUN bun run build
@@ -176,12 +176,12 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 # Application environment defaults
 ENV NODE_ENV=production \
     PORT=3002 \
-    DATABASE_URL=postgresql://inker_user:inker_password@localhost:5432/inker_db \
+    DATABASE_URL=${DATABASE_URL} \
     REDIS_HOST=localhost \
     REDIS_PORT=6379 \
     REDIS_PASSWORD=inker_redis \
     REDIS_URL=redis://:inker_redis@localhost:6379 \
-    ADMIN_PIN="1111" \
+    ADMIN_PIN=1111 \
     CORS_ORIGINS=* \
     LOG_LEVEL=info
 
@@ -230,7 +230,7 @@ RUN mkdir -p /app/uploads/screens /app/uploads/firmware /app/uploads/widgets \
 
 # Create non-root user for backend process
 RUN useradd --system --no-create-home --shell /usr/sbin/nologin inker && \
-    chown -R inker:inker /app
+    chown -R inker:inker /app /data
 
 EXPOSE 80
 
