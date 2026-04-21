@@ -1,4 +1,10 @@
 #!/command/with-contenv sh
+if [ "$IMAGE_DB_PROVIDER" != "postgresql" ] && [ "$DB_PROVIDER" = "postgresql" ]; then
+  echo "ERROR: Container was built with DB_PROVIDER=$IMAGE_DB_PROVIDER but started with DB_PROVIDER=postgresql. PostgreSQL is not installed in this image."
+  s6-svc -O .
+  exit 1
+fi
+
 if [ "$DB_PROVIDER" != "postgresql" ]; then
   s6-svc -O .
   exit 0

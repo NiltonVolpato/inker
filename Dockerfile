@@ -95,6 +95,7 @@ FROM debian:trixie-slim AS production
 ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG DB_PROVIDER=postgresql
 ENV DB_PROVIDER=${DB_PROVIDER}
+ENV IMAGE_DB_PROVIDER=${DB_PROVIDER}
 
 # Install all system packages in one layer
 RUN apt-get update && \
