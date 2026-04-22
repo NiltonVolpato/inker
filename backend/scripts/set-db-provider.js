@@ -18,12 +18,23 @@ if (!fs.existsSync(generatedDir)) {
 
 let schema = fs.readFileSync(schemaPath, 'utf8');
 
+const datasourceRegex = /datasource db \{\s*provider\s*=\s*"[^"]+"\s*url\s*=\s*env\("DATABASE_URL"\)\s*\}/;
+if (!datasourceRegex.test(schema)) {
+  console.error(`[set-db-provider] Error: Could not find matching datasource block in schema.prisma.`);
+  process.exit(1);
+}
+
 schema = schema.replace(
-  /datasource db \{\s*provider\s*=\s*"[^"]+"\s*url\s*=\s*env\("DATABASE_URL"\)\s*\}/,
+  datasourceRegex,
   `datasource db {\n  provider = "${provider}"\n  url      = env("DATABASE_URL")\n}`
 );
 
 if (provider === 'sqlite') {
+  if (!/(^|\n)\s*[A-Za-z_][A-Za-z0-9_]*\s+Json\??\b/.test(schema)) {
+    console.error(`[set-db-provider] Error: Found no Prisma field declaration with type 'Json' or 'Json?' to convert to 'String' for SQLite provider. Schema might have changed.`);
+    process.exit(1);
+  }
+
   schema = schema.replace(/ Json\?/g, ' String?');
   schema = schema.replace(/ Json/g, ' String');
 }

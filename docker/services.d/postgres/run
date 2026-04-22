@@ -1,4 +1,11 @@
 #!/command/with-contenv sh
+IMAGE_DB_PROVIDER=$(cat /etc/inker/image-db-provider 2>/dev/null || echo "unknown")
+if [ "$DB_PROVIDER" != "$IMAGE_DB_PROVIDER" ]; then
+  echo "ERROR: Runtime DB_PROVIDER=$DB_PROVIDER does not match build-time DB_PROVIDER=$IMAGE_DB_PROVIDER. Rebuild the image with DB_PROVIDER=$DB_PROVIDER or restart the container with DB_PROVIDER=$IMAGE_DB_PROVIDER."
+  s6-svscanctl -t /run/service
+  exit 1
+fi
+
 if [ "$DB_PROVIDER" != "postgresql" ]; then
   s6-svc -O .
   exit 0
