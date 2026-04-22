@@ -30,8 +30,8 @@ schema = schema.replace(
 );
 
 if (provider === 'sqlite') {
-  if (!schema.includes(' Json?') && !schema.includes(' Json')) {
-    console.error(`[set-db-provider] Error: Found no 'Json' or 'Json?' fields to convert to 'String' for SQLite provider. Schema might have changed.`);
+  if (!/(^|\n)\s*[A-Za-z_][A-Za-z0-9_]*\s+Json\??\b/.test(schema)) {
+    console.error(`[set-db-provider] Error: Found no Prisma field declaration with type 'Json' or 'Json?' to convert to 'String' for SQLite provider. Schema might have changed.`);
     process.exit(1);
   }
 

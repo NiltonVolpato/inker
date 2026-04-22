@@ -95,7 +95,9 @@ FROM debian:trixie-slim AS production
 ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG DB_PROVIDER=postgresql
 ENV DB_PROVIDER=${DB_PROVIDER}
-ENV IMAGE_DB_PROVIDER=${DB_PROVIDER}
+# Persist build-time DB_PROVIDER to a file so runtime scripts can verify the image
+# was built with the expected provider; a file cannot be overridden via docker run -e.
+RUN mkdir -p /etc/inker && echo "${DB_PROVIDER}" > /etc/inker/image-db-provider
 
 # Install all system packages in one layer
 RUN apt-get update && \
