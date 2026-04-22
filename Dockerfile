@@ -4,7 +4,7 @@
 # =============================================================================
 # Stage 1: Build frontend
 # =============================================================================
-FROM oven/bun:1-alpine AS frontend-builder
+FROM oven/bun:1-slim AS frontend-builder
 
 WORKDIR /app
 
@@ -24,14 +24,15 @@ RUN bun run build
 # =============================================================================
 FROM oven/bun:1-slim AS backend-install
 ARG DB_PROVIDER=postgresql
-ENV DB_PROVIDER=${DB_PROVIDER}
+ENV DB_PROVIDER=${DB_PROVIDER} \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
-# Node.js binary for Prisma generate (bun segfaults with Prisma CLI)
-COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
-
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# Node.js for Prisma generate (bun segfaults with Prisma CLI); ca-certificates
+# required for Prisma to fetch the query engine binary over HTTPS
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates nodejs && rm -rf /var/lib/apt/lists/*
 
 COPY backend/package.json backend/bun.lock* ./
 COPY backend/prisma ./prisma/
@@ -60,22 +61,25 @@ RUN bun install --frozen-lockfile && \
     \) -exec rm -rf {} + 2>/dev/null || true && \
     # Remove swagger UI (not needed in production)
     rm -rf node_modules/swagger-ui-dist && \
-    # Remove musl variants of sharp (only glibc needed on Debian)
-    rm -rf node_modules/@img/sharp-libvips-linuxmusl-x64 \
-           node_modules/@img/sharp-linuxmusl-x64
+    # Remove musl variants of sharp (production image uses Ubuntu/glibc)
+    rm -rf node_modules/@img/sharp-libvips-linux-x64-musl \
+           node_modules/@img/sharp-linuxmusl-x64 \
+           node_modules/@img/sharp-libvips-linux-arm64-musl \
+           node_modules/@img/sharp-linuxmusl-arm64
 
 # =============================================================================
 # Stage 3: Build backend
 # =============================================================================
 FROM oven/bun:1-slim AS backend-builder
 ARG DB_PROVIDER=postgresql
-ENV DB_PROVIDER=${DB_PROVIDER}
+ENV DB_PROVIDER=${DB_PROVIDER} \
+    PUPPETEER_SKIP_DOWNLOAD=true \
+    PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 WORKDIR /app
 
-COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
-
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+# Node.js for Prisma generate; ca-certificates for Prisma HTTPS downloads
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates nodejs && rm -rf /var/lib/apt/lists/*
 
 COPY backend/package.json backend/bun.lock* ./
 RUN bun install --frozen-lockfile
@@ -90,97 +94,112 @@ RUN bun run build
 # =============================================================================
 # Stage 4: Production (all-in-one)
 # =============================================================================
-FROM debian:trixie-slim AS production
+FROM ubuntu:24.04 AS production
 
 ARG S6_OVERLAY_VERSION=3.2.1.0
 ARG DB_PROVIDER=postgresql
-ENV DB_PROVIDER=${DB_PROVIDER}
-# Persist build-time DB_PROVIDER to a file so runtime scripts can verify the image
-# was built with the expected provider; a file cannot be overridden via docker run -e.
+# Playwright chromium-headless-shell revision and CfT browser version.
+# arm64 uses the playwright CDN (builds/chromium/{revision}/...).
+# x64 uses Chrome for Testing via the playwright CDN (builds/cft/{browserVersion}/...).
+# Update both together when bumping:
+#   https://github.com/microsoft/playwright/blob/main/packages/playwright-core/browsers.json
+ARG PLAYWRIGHT_REVISION=1219
+ARG PLAYWRIGHT_BROWSER_VERSION=147.0.7727.49
+
+ENV DB_PROVIDER=${DB_PROVIDER} \
+    DEBIAN_FRONTEND=noninteractive
+
+# Persist build-time DB_PROVIDER to a read-only file so runtime scripts can
+# verify the image was built with the expected provider; unlike ENV, this file
+# cannot be overridden via docker run -e.
 RUN mkdir -p /etc/inker && echo "${DB_PROVIDER}" > /etc/inker/image-db-provider
 
-# Install all system packages in one layer
+# Install system packages, Playwright chromium-headless-shell, and s6-overlay
+# in one layer to minimise image size.
 RUN apt-get update && \
-    # Install postgresql only if DB_PROVIDER is postgresql
-    if [ "$DB_PROVIDER" = "postgresql" ]; then \
-        apt-get install -y --no-install-recommends postgresql-17; \
-    fi && \
     apt-get install -y --no-install-recommends \
-    # Redis
-    redis-server \
-    # Nginx
-    nginx \
-    # Chrome headless shell dependencies
-    wget ca-certificates openssl unzip \
-    fonts-liberation fonts-noto-color-emoji fonts-noto-cjk fontconfig \
-    libnss3 libatk-bridge2.0-0t64 libdrm2 libxkbcommon0 \
-    libgbm1 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 \
-    libasound2t64 libcups2t64 libatk1.0-0t64 libnspr4 libdbus-1-3 \
-    # s6-overlay dependencies
-    xz-utils \
+        # Bootstrap: needed to add the PGDG repository
+        curl ca-certificates gnupg \
+        # Build utilities
+        unzip xz-utils \
     && \
-    # Install Chrome Headless Shell
-    CHROME_VERSION=$(wget -qO- "https://googlechromelabs.github.io/chrome-for-testing/LATEST_RELEASE_STABLE") && \
-    wget -q "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_VERSION}/linux64/chrome-headless-shell-linux64.zip" -O /tmp/chrome.zip && \
-    unzip /tmp/chrome.zip -d /opt/ && \
-    chmod +x /opt/chrome-headless-shell-linux64/chrome-headless-shell && \
-    rm /tmp/chrome.zip && \
-    # Strip Chrome: remove GPU libs (--disable-gpu), keep locale packs for Unicode/CJK shaping
-    rm -f /opt/chrome-headless-shell-linux64/libEGL.so \
-          /opt/chrome-headless-shell-linux64/libGLESv2.so \
-          /opt/chrome-headless-shell-linux64/libvk_swiftshader.so \
-          /opt/chrome-headless-shell-linux64/libvulkan.so.1 \
-          /opt/chrome-headless-shell-linux64/vk_swiftshader_icd.json \
-          /opt/chrome-headless-shell-linux64/LICENSE.headless_shell && \
-    # Install s6-overlay
-    wget -q "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" -O /tmp/s6-noarch.tar.xz && \
-    tar -C / -Jxpf /tmp/s6-noarch.tar.xz && \
-    wget -q "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-x86_64.tar.xz" -O /tmp/s6-x86_64.tar.xz && \
-    tar -C / -Jxpf /tmp/s6-x86_64.tar.xz && \
-    rm /tmp/s6-noarch.tar.xz /tmp/s6-x86_64.tar.xz && \
-    # Install PostgreSQL 15 from PGDG for data migration (15→17) support
-    # Existing users upgrading from bookworm need PG 15 binaries to dump their data
+    # ---------- PostgreSQL 17 via PGDG (Ubuntu 24.04 ships PG16 only) ----------
+    install -d /usr/share/postgresql-common/pgdg && \
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+         -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc && \
+    . /etc/os-release && \
+    echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt ${VERSION_CODENAME}-pgdg main" \
+         > /etc/apt/sources.list.d/pgdg.list && \
+    apt-get update && \
     if [ "$DB_PROVIDER" = "postgresql" ]; then \
-        echo "deb http://apt.postgresql.org/pub/repos/apt trixie-pgdg main" > /etc/apt/sources.list.d/pgdg.list && \
-        wget -qO /etc/apt/trusted.gpg.d/pgdg.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc && \
-        apt-get update -qq && \
-        apt-get install -y -qq --no-install-recommends postgresql-15 >/dev/null 2>&1 && \
-        rm -rf /var/lib/postgresql/15 /etc/apt/sources.list.d/pgdg.list; \
+        apt-get install -y --no-install-recommends postgresql-17 postgresql-client-17; \
     fi && \
-    # Remove build-only tools normally
-    apt-get purge -y unzip xz-utils wget && apt-get autoremove -y && \
-    # Force-remove transitive deps not needed at runtime
-    # (bypass dependency checks to avoid cascading removal of postgresql/chrome)
-    dpkg --purge --force-depends \
-    libllvm19 libz3-4 libperl5.40 perl perl-modules-5.40 \
-    libavahi-client3 libavahi-common-data libavahi-common3 \
-    libelf1t64 \
-    2>/dev/null || true && \
-    rm -rf /var/lib/apt/lists/* /var/log/dpkg.log /var/log/apt && \
-    # Remove unused data (keep locales and i18n for Unicode/CJK support)
-    rm -rf /usr/share/doc /usr/share/man \
-           /usr/share/info /usr/share/lintian /usr/share/X11/xkb \
-           /var/cache/debconf/*-old && \
+    # ---------- Application runtime packages ----------
+    apt-get install -y --no-install-recommends \
+        # Redis
+        redis-server \
+        # Nginx
+        nginx \
+        # Node.js (for Prisma migrations at container startup)
+        nodejs \
+        # Playwright chromium-headless-shell runtime dependencies
+        # (sourced from playwright/nativeDeps.ts ubuntu24.04 chromium section)
+        libasound2t64 libatk-bridge2.0-0t64 libatk1.0-0t64 libatspi2.0-0t64 \
+        libcairo2 libcups2t64 libdbus-1-3 libdrm2 libgbm1 libglib2.0-0t64 \
+        libnspr4 libnss3 libpango-1.0-0 libx11-6 libxcb1 libxcomposite1 \
+        libxdamage1 libxext6 libxfixes3 libxkbcommon0 libxrandr2 \
+        # Fonts for Unicode, CJK, and general rendering in Puppeteer
+        fonts-noto fonts-noto-cjk fontconfig \
+    && \
+    # Rebuild font cache
+    fc-cache -f && \
+    # ---------- Playwright chromium-headless-shell ----------
+    # arm64: Playwright custom build from playwright CDN
+    #   zip structure: chrome-linux/headless_shell
+    # x64:  Chrome for Testing build hosted on playwright CDN
+    #   zip structure: chrome-headless-shell-linux64/chrome-headless-shell
+    ARCH=$(dpkg --print-architecture) && \
+    if [ "$ARCH" = "arm64" ]; then \
+        CHROME_URL="https://cdn.playwright.dev/dbazure/download/playwright/builds/chromium/${PLAYWRIGHT_REVISION}/chromium-headless-shell-linux-arm64.zip"; \
+    else \
+        CHROME_URL="https://cdn.playwright.dev/builds/cft/${PLAYWRIGHT_BROWSER_VERSION}/linux64/chrome-headless-shell-linux64.zip"; \
+    fi && \
+    curl -fL "$CHROME_URL" -o /tmp/chromium.zip && \
+    unzip -q /tmp/chromium.zip -d /opt/chromium-headless-shell && \
+    CHROME_BIN=$(find /opt/chromium-headless-shell -type f \( -name "headless_shell" -o -name "chrome-headless-shell" \) | head -1) && \
+    chmod +x "$CHROME_BIN" && \
+    ln -sf "$CHROME_BIN" /usr/local/bin/chrome-headless-shell && \
+    rm /tmp/chromium.zip && \
+    # ---------- s6-overlay process supervisor ----------
+    S6_ARCH=$(uname -m) && \
+    curl -fL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-noarch.tar.xz" \
+         -o /tmp/s6-noarch.tar.xz && \
+    tar -C / -Jxpf /tmp/s6-noarch.tar.xz && \
+    curl -fL "https://github.com/just-containers/s6-overlay/releases/download/v${S6_OVERLAY_VERSION}/s6-overlay-${S6_ARCH}.tar.xz" \
+         -o /tmp/s6-arch.tar.xz && \
+    tar -C / -Jxpf /tmp/s6-arch.tar.xz && \
+    rm /tmp/s6-noarch.tar.xz /tmp/s6-arch.tar.xz && \
+    # Remove default nginx server block (conflicts with our config on port 80)
+    rm -f /etc/nginx/sites-enabled/default && \
+    # Clean apt caches
+    rm -rf /var/lib/apt/lists/* && \
     # Remove auto-created PostgreSQL cluster (will be initialized on first run)
     if [ "$DB_PROVIDER" = "postgresql" ]; then \
-        rm -rf /var/lib/postgresql/17/main/*; \
+        rm -rf /var/lib/postgresql; \
     fi
 
-# Install Bun runtime (copy from build image)
+# Install Bun runtime (copy from slim image — glibc build, matches Ubuntu)
 COPY --from=oven/bun:1-slim /usr/local/bin/bun /usr/local/bin/bun
 RUN ln -s /usr/local/bin/bun /usr/local/bin/bunx
 
-# Node.js binary for Prisma CLI (Bun's baseline mode crashes on non-AVX2 hardware)
-COPY --from=node:22-slim /usr/local/bin/node /usr/local/bin/node
-
-# Puppeteer configuration
-ENV PUPPETEER_EXECUTABLE_PATH=/opt/chrome-headless-shell-linux64/chrome-headless-shell
+# Puppeteer configuration — points at the Playwright chromium-headless-shell
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chrome-headless-shell
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 
 # Application environment defaults
 ENV NODE_ENV=production \
     PORT=3002 \
-    DATABASE_URL=${DATABASE_URL} \
+    DATABASE_URL= \
     REDIS_HOST=localhost \
     REDIS_PORT=6379 \
     REDIS_PASSWORD=inker_redis \
@@ -213,9 +232,8 @@ COPY --from=frontend-builder /app/dist /usr/share/nginx/html
 # Copy frontend font files
 COPY frontend/public/fonts /usr/share/nginx/html/fonts
 
-# Copy nginx config
+# Copy nginx config (goes into conf.d/ — included inside http{} by Ubuntu's nginx.conf)
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
-RUN rm -f /etc/nginx/sites-enabled/default
 
 # Copy s6-overlay service definitions
 COPY docker/cont-init.d/ /etc/cont-init.d/
@@ -233,7 +251,8 @@ RUN mkdir -p /app/uploads/screens /app/uploads/firmware /app/uploads/widgets \
     fi
 
 # Create non-root user for backend process
-RUN useradd --system --no-create-home --shell /usr/sbin/nologin inker && \
+RUN groupadd -r inker && \
+    useradd -r -g inker -M -s /usr/sbin/nologin inker && \
     chown -R inker:inker /app /data
 
 EXPOSE 80
